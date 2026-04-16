@@ -6,6 +6,5 @@ datasets
 peft
 bitsandbytes
 scikit-learn
-trl
 textattack
 tqdm

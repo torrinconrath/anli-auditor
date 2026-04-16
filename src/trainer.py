@@ -2,7 +2,7 @@
 
 import os
 from transformers import TrainingArguments
-from trl import SFTTrainer
+from transformers import Trainer
 from . import config
 
 def fine_tune_model(model, tokenizer, peft_config, train_dataset):
@@ -28,14 +28,21 @@ def fine_tune_model(model, tokenizer, peft_config, train_dataset):
         group_by_length=True,
     )
 
-    trainer = SFTTrainer(
+    def tokenize_function(example):
+        return tokenizer(
+            example["text"],
+            truncation=True,
+            padding="max_length",
+            max_length=config.MAX_SEQ_LENGTH,
+        )
+
+    tokenized_dataset = train_dataset.map(tokenize_function, batched=True)
+
+    trainer = Trainer(
         model=model,
-        train_dataset=train_dataset,
-        peft_config=peft_config,
-        dataset_text_field="text",
-        max_seq_length=config.MAX_SEQ_LENGTH,
-        tokenizer=tokenizer,
         args=training_args,
+        train_dataset=tokenized_dataset,
+        tokenizer=tokenizer,
     )
 
     trainer.train()
