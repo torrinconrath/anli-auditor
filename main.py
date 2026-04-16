@@ -13,14 +13,14 @@ def main():
     """Main function to run the complete workflow."""
     
     # 1. Load and prepare data
-    train_data, test_data, _ = prepare_anli_dataset()
+    train_data, val_data, test_data, label_map = prepare_anli_dataset()
 
     # 2. Load model, tokenizer, and PEFT config
     model, tokenizer, peft_config = load_model_and_tokenizer()
 
     # 3. Fine-tune the model if enabled
     if config.DO_FINETUNING:
-        fine_tune_model(model, tokenizer, peft_config, train_data)
+        fine_tune_model(model, tokenizer, peft_config, train_data, val_data)
     else:
         print(f"Skipping training. Ensure an adapter exists at {config.OUTPUT_DIR}/final_adapter")
 
@@ -31,7 +31,7 @@ def main():
     latent_alignment_scores = []
     causal_sensitivity_indices = []
 
-    audit_subset = test_data.select(range(config.NUM_AUDIT_SAMPLES))
+    audit_subset = test_data.select(range(min(config.NUM_AUDIT_SAMPLES, len(test_data))))
 
     for sample in tqdm(audit_subset, desc="Auditing Samples"):
         try:
