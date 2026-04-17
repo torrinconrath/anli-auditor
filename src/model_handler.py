@@ -9,10 +9,15 @@ def load_model_and_tokenizer():
     """Loads the quantized model, tokenizer, and PEFT config."""
     print(f"\n--- Loading Model: {config.MODEL_NAME} ---")
 
+    # RTX 4070 (Ada Lovelace) supports bfloat16 natively.
+    # Using float16 for compute_dtype causes numerical instability during
+    # 4-bit dequantization — bf16 is more stable and faster on this GPU.
+    compute_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.float16,
+        bnb_4bit_compute_dtype=compute_dtype,
         bnb_4bit_use_double_quant=True,
     )
 
@@ -36,7 +41,7 @@ def load_model_and_tokenizer():
         task_type="CAUSAL_LM",
         target_modules=config.LORA_TARGET_MODULES,
     )
-    
+
     model = prepare_model_for_kbit_training(model)
     model = get_peft_model(model, peft_config)
 

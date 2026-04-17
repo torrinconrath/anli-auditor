@@ -12,6 +12,16 @@ def fine_tune_model(model, tokenizer, peft_config, train_dataset, val_dataset):
     """
     print("\n--- Starting Fine-Tuning ---")
 
+    # RTX 4070 (Ada Lovelace) supports bf16 natively — prefer it over fp16.
+    # These must be mutually exclusive or TrainingArguments will crash.
+    use_bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+    use_fp16 = torch.cuda.is_available() and not use_bf16
+
+    # eval/save every 200 steps so we catch overfitting across all 3 epochs.
+    # With 10k samples / batch 4 / grad accum 4 = 625 steps/epoch × 3 = 1875 total.
+    # eval at 500 would only give 3 checkpoints; 200 gives ~9, much better signal.
+    EVAL_SAVE_STEPS = 200
+
     training_args = TrainingArguments(
         output_dir=config.OUTPUT_DIR,
         logging_dir=config.LOGGING_DIR,
@@ -24,8 +34,8 @@ def fine_tune_model(model, tokenizer, peft_config, train_dataset, val_dataset):
 
         optim="paged_adamw_32bit",
 
-        fp16=False,
-        bf16=torch.cuda.is_available() and torch.cuda.is_bf16_supported(),
+        fp16=use_fp16,
+        bf16=use_bf16,
 
         learning_rate=config.LEARNING_RATE,
         weight_decay=0.001,
@@ -34,20 +44,21 @@ def fine_tune_model(model, tokenizer, peft_config, train_dataset, val_dataset):
         lr_scheduler_type="cosine",
 
         logging_steps=25,
-        save_steps=500,
-        eval_steps=500,
+        save_steps=EVAL_SAVE_STEPS,
+        eval_steps=EVAL_SAVE_STEPS,
         eval_strategy="steps",
-        save_total_limit=2,
+        save_total_limit=3,           # keep best + 2 recent checkpoints
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
 
-        group_by_length=True,
+        # group_by_length removed — conflicts with DataCollatorForSeq2Seq.
+        # The collator handles per-batch padding correctly already.
     )
 
     def tokenize_function(examples):
         """
         Tokenizes a batch of examples and masks prompt tokens in labels so the
-        loss is only computed on the label portion of each sequence.
+        loss is only computed on the label (Entailment/Neutral/Contradiction) tokens.
         """
         split_token = "### Label:"
         all_input_ids = []
@@ -78,7 +89,7 @@ def fine_tune_model(model, tokenizer, peft_config, train_dataset, val_dataset):
             input_ids = full["input_ids"]
             attention_mask = full["attention_mask"]
 
-            # Mask all prompt token positions so loss is only on the label
+            # Mask prompt token positions — loss is computed only on label tokens.
             n_prompt = min(len(prompt_ids), len(input_ids))
             labels = [-100] * n_prompt + input_ids[n_prompt:]
 
@@ -92,11 +103,14 @@ def fine_tune_model(model, tokenizer, peft_config, train_dataset, val_dataset):
             "labels": all_labels,
         }
 
-    tokenized_train = train_dataset.map(tokenize_function, batched=True, remove_columns=train_dataset.column_names)
-    tokenized_val   = val_dataset.map(tokenize_function, batched=True, remove_columns=val_dataset.column_names)
+    tokenized_train = train_dataset.map(
+        tokenize_function, batched=True, remove_columns=train_dataset.column_names
+    )
+    tokenized_val = val_dataset.map(
+        tokenize_function, batched=True, remove_columns=val_dataset.column_names
+    )
 
-    # DataCollatorForSeq2Seq handles variable-length padding and correctly
-    # fills label padding positions with -100 (ignored by the loss).
+    # Handles variable-length padding per batch and fills label padding with -100.
     data_collator = DataCollatorForSeq2Seq(
         tokenizer=tokenizer,
         model=model,
@@ -109,7 +123,7 @@ def fine_tune_model(model, tokenizer, peft_config, train_dataset, val_dataset):
         args=training_args,
         train_dataset=tokenized_train,
         eval_dataset=tokenized_val,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,   # replaces deprecated tokenizer= kwarg
         data_collator=data_collator,
     )
 

@@ -1,14 +1,15 @@
 # src/data_handler.py
 
 from datasets import load_dataset, concatenate_datasets
+from . import config
 
-def prepare_anli_dataset(max_train_samples=5000, max_val_samples=500):
+def prepare_anli_dataset(max_train_samples=config.MAX_TRAIN_SAMPLES, max_val_samples=config.MAX_VAL_SAMPLES):
     """
     Loads and formats the ANLI dataset.
 
     Split strategy:
-      Train  — R1+R2+R3 training splits (subsampled).  R3 is hardest so including
-               it in training exposes the model to the full difficulty spectrum.
+      Train  — R1+R2+R3 training splits (subsampled). R3 is hardest so including
+               it exposes the model to the full difficulty spectrum.
       Val    — R1+R2 dev splits (easier) used for loss-based early-stopping /
                epoch selection during training.
       Test   — R3 dev split (hardest) used exclusively for final evaluation and
@@ -59,9 +60,13 @@ def prepare_anli_dataset(max_train_samples=5000, max_val_samples=500):
 {label_map[sample['label']]}"""
         }
 
-    train_dataset = full_train.map(format_prompt)
-    val_dataset   = full_val.map(format_prompt)
-    test_dataset  = test_dataset.map(format_prompt)
+    # Keep only the formatted text column — raw ANLI columns (uid, genre, etc.)
+    # are not needed downstream and add noise to the tokenizer batch.
+    cols_to_remove = [c for c in train_r1.column_names if c != "text"]
+
+    train_dataset = full_train.map(format_prompt, remove_columns=cols_to_remove)
+    val_dataset   = full_val.map(format_prompt, remove_columns=cols_to_remove)
+    test_dataset  = test_dataset.map(format_prompt, remove_columns=cols_to_remove)
 
     print(f"Train size:      {len(train_dataset)}")
     print(f"Validation size: {len(val_dataset)}")
