@@ -9,11 +9,10 @@ This project investigates the gap between **faithfulness** and **plausibility** 
 ## Project Structure
 
 ```
-nlp-2026/
+anili-auditor/
 ├── main.py                  # Entry point — runs training, evaluation, and audit
 ├── requirements.txt
 └── src/
-    ├── __init__.py
     ├── config.py            # All hyperparameters and paths
     ├── data_handler.py      # ANLI dataset loading and splits
     ├── model_handler.py     # RoBERTa-large model and tokenizer loading
@@ -44,12 +43,6 @@ venv\Scripts\activate        # Windows
 # Install dependencies
 pip install -r requirements.txt
 ```
-
-> **Windows users:** If you encounter GPU training stalls, increase the TDR timeout in an Administrator PowerShell and reboot:
-> ```powershell
-> reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Control\GraphicsDrivers" /v TdrDelay /t REG_DWORD /d 300 /f
-> reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Control\GraphicsDrivers" /v TdrDdiDelay /t REG_DWORD /d 300 /f
-> ```
 
 ---
 
