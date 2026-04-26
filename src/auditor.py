@@ -7,56 +7,72 @@ from textattack.transformations import WordSwapEmbedding
 from textattack.constraints.pre_transformation import RepeatModification, StopwordModification
 from textattack.augmentation import Augmenter
 
+
 class RationaleAuditor:
     def __init__(self, model, tokenizer):
         self.model = model.eval()
         self.tokenizer = tokenizer
-        self.device = model.device
+        self.device = next(model.parameters()).device
 
         transformation = WordSwapEmbedding(max_candidates=10)
         constraints = [RepeatModification(), StopwordModification()]
-        self.augmenter = Augmenter(transformation=transformation, constraints=constraints, pct_words_to_swap=0.1, transformations_per_example=1)
+        self.augmenter = Augmenter(
+            transformation=transformation,
+            constraints=constraints,
+            pct_words_to_swap=0.1,
+            transformations_per_example=1,
+        )
 
     @torch.no_grad()
-    def get_hidden_state_at_decision_point(self, text):
-        inputs = self.tokenizer(text, return_tensors="pt").to(self.device)
+    def get_cls_hidden_state(self, text_a: str, text_b: str = None) -> np.ndarray:
+        """
+        Returns the [CLS] token hidden state from RoBERTa's final layer.
+        For a premise/hypothesis pair, pass both as text_a and text_b so
+        the model encodes their relationship bidirectionally.
+        For a standalone rationale string, pass only text_a.
+        [CLS] in RoBERTa is mean-pooled during pre-training to represent
+        the full sequence, making it the natural decision-point representation.
+        """
+        if text_b is not None:
+            inputs = self.tokenizer(
+                text_a, text_b,
+                return_tensors="pt",
+                truncation=True,
+                max_length=512,
+            ).to(self.device)
+        else:
+            inputs = self.tokenizer(
+                text_a,
+                return_tensors="pt",
+                truncation=True,
+                max_length=512,
+            ).to(self.device)
+
         outputs = self.model(**inputs, output_hidden_states=True)
-        return outputs.hidden_states[-1][0, -1, :].cpu().numpy().reshape(1, -1)
+        # [CLS] is always at position 0 in RoBERTa
+        cls_state = outputs.hidden_states[-1][0, 0, :]
+        return cls_state.cpu().numpy().reshape(1, -1)
 
-    @torch.no_grad()
-    def get_text_embedding(self, text):
-        inputs = self.tokenizer(text, return_tensors="pt").to(self.device)
-        embedding_layer = self.model.get_input_embeddings()
-        embeddings = embedding_layer(inputs.input_ids)
-        return torch.mean(embeddings, dim=1).cpu().numpy()
+    def run_single_audit(self, sample: dict) -> tuple:
+        premise = sample["premise"]
+        hypothesis = sample["hypothesis"]
+        human_rationale = sample["reason"]
 
-    def run_single_audit(self, sample):
-        premise = sample['premise']
-        hypothesis = sample['hypothesis']
-        human_rationale = sample['reason']
-        
-        inference_prompt = f"""Analyze the following premise and hypothesis to determine the relationship. First, provide a step-by-step rationale, and then conclude with the final label (Entailment, Neutral, or Contradiction).
-
-### Premise:
-{premise}
-
-### Hypothesis:
-{hypothesis}
-
-### Rationale:"""
-        
         # --- Latent Alignment Score (LAS) ---
-        original_hidden_state = self.get_hidden_state_at_decision_point(inference_prompt)
-        human_rationale_embedding = self.get_text_embedding(human_rationale)
-        las = cosine_similarity(original_hidden_state, human_rationale_embedding)[0, 0]
+        # [CLS] state of the premise+hypothesis pair encodes the model's
+        # decision representation. Compare to [CLS] of the human rationale
+        # to measure semantic alignment between internal state and human reasoning.
+        decision_state   = self.get_cls_hidden_state(premise, hypothesis)
+        rationale_state  = self.get_cls_hidden_state(human_rationale)
+        las = cosine_similarity(decision_state, rationale_state)[0, 0]
 
         # --- Causal Sensitivity Index (CSI) ---
+        # Perturb the premise adversarially and measure how much the alignment
+        # with the human rationale drops. High CSI = model is sensitive to
+        # evidence changes, consistent with faithful reasoning.
         perturbed_premise = self.augmenter.augment(premise)[0]
-        perturbed_prompt = inference_prompt.replace(premise, perturbed_premise)
-        
-        perturbed_hidden_state = self.get_hidden_state_at_decision_point(perturbed_prompt)
-        perturbed_alignment = cosine_similarity(perturbed_hidden_state, human_rationale_embedding)[0, 0]
-        csi = las - perturbed_alignment
-        
-        return las, csi
-    
+        perturbed_state   = self.get_cls_hidden_state(perturbed_premise, hypothesis)
+        perturbed_alignment = cosine_similarity(perturbed_state, rationale_state)[0, 0]
+        csi = float(las - perturbed_alignment)
+
+        return float(las), float(csi)

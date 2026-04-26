@@ -8,14 +8,10 @@ torchaudio==2.2.2+cu121
 transformers>=4.40.0
 datasets>=2.18.0
 numpy<2
-peft==0.10.0
-
-# Quantization (GPU-enabled)
-bitsandbytes>=0.43.0
 
 # Utils
 scikit-learn
 tqdm
 
-# Optional (can be heavy / slow)
+# Adversarial perturbation for CSI
 textattack

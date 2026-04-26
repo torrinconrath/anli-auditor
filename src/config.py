@@ -1,32 +1,26 @@
 # src/config.py
 
 # --- Model & Paths ---
-MODEL_NAME = "meta-llama/Meta-Llama-3.1-8B-Instruct"
-OUTPUT_DIR = "./results_anli_llama3"
+MODEL_NAME = "roberta-large"
+OUTPUT_DIR = "./results_anli_roberta"
 LOGGING_DIR = "./logs"
 
 # --- Auditing ---
-NUM_AUDIT_SAMPLES = 100  # Number of test samples to audit
+NUM_AUDIT_SAMPLES = 100
 
 # --- Training Flags ---
-DO_FINETUNING = True  # Set to False to skip training and use a pre-trained adapter
+DO_FINETUNING = True
 
 # --- Fine-Tuning Hyperparameters ---
 MAX_TRAIN_SAMPLES = 10000
 MAX_VAL_SAMPLES = 1000
-TRAIN_EPOCHS = 3
-BATCH_SIZE = 4
-GRADIENT_ACCUMULATION_STEPS = 4
-LEARNING_RATE = 1e-4
-MAX_SEQ_LENGTH = 768
+TRAIN_EPOCHS = 5                    # encoder models converge slower than causal LMs
+BATCH_SIZE = 16                     # RoBERTa is small — large batches are fine
+GRADIENT_ACCUMULATION_STEPS = 1
+LEARNING_RATE = 2e-5                # standard for RoBERTa fine-tuning on NLI
+MAX_SEQ_LENGTH = 512
 
-# --- LoRA Configuration ---
-# Rule of thumb: lora_alpha == lora_r gives a scaling factor of 1.0, which is
-# the standard starting point. 64/16 under-scales the LoRA updates relative
-# to the pre-trained weights and typically needs a higher LR to compensate.
-LORA_R = 16
-LORA_ALPHA = 16         
-LORA_DROPOUT = 0.05
-LORA_TARGET_MODULES = [
-    "q_proj", "k_proj", "v_proj", "o_proj", # attention core reasoning modules
-]
+# --- Labels ---
+NUM_LABELS = 3
+LABEL2ID = {"Entailment": 0, "Neutral": 1, "Contradiction": 2}
+ID2LABEL = {0: "Entailment", 1: "Neutral", 2: "Contradiction"}

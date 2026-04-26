@@ -2,25 +2,43 @@
 
 import os
 import torch
-from transformers import TrainingArguments, Trainer, DataCollatorForSeq2Seq
+import numpy as np
+from transformers import TrainingArguments, Trainer, DataCollatorWithPadding
+from sklearn.metrics import f1_score, accuracy_score
 from . import config
 
 
-def fine_tune_model(model, tokenizer, peft_config, train_dataset, val_dataset):
+def fine_tune_model(model, tokenizer, train_dataset, val_dataset):
     """
-    Fine-tunes the model using the standard HF Trainer with manual prompt masking.
+    Fine-tunes RoBERTa-large for NLI classification.
+    Standard full fine-tuning — no LoRA, no quantization.
+    Expected runtime: ~20-30 minutes on RTX 4070.
     """
     print("\n--- Starting Fine-Tuning ---")
 
-    # RTX 4070 (Ada Lovelace) supports bf16 natively — prefer it over fp16.
-    # These must be mutually exclusive or TrainingArguments will crash.
-    use_bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
-    use_fp16 = torch.cuda.is_available() and not use_bf16
+    def tokenize_function(examples):
+        return tokenizer(
+            examples["premise"],
+            examples["hypothesis"],
+            truncation=True,
+            max_length=config.MAX_SEQ_LENGTH,
+        )
 
-    # eval/save every 200 steps so we catch overfitting across all 3 epochs.
-    # With 10k samples / batch 4 / grad accum 4 = 625 steps/epoch × 3 = 1875 total.
-    # eval at 500 would only give 3 checkpoints; 200 gives ~9, much better signal.
-    EVAL_SAVE_STEPS = 200
+    tokenized_train = train_dataset.map(tokenize_function, batched=True)
+    tokenized_val   = val_dataset.map(tokenize_function, batched=True)
+
+    def compute_metrics(eval_pred):
+        logits, labels = eval_pred
+        preds = np.argmax(logits, axis=-1)
+        return {
+            "accuracy": accuracy_score(labels, preds),
+            "macro_f1": f1_score(labels, preds, average="macro"),
+        }
+
+    # Steps per epoch: 10000 / 16 = 625
+    # Total steps: 625 * 5 = 3125
+    # Eval every 625 steps = once per epoch
+    STEPS_PER_EPOCH = len(tokenized_train) // config.BATCH_SIZE
 
     training_args = TrainingArguments(
         output_dir=config.OUTPUT_DIR,
@@ -32,105 +50,44 @@ def fine_tune_model(model, tokenizer, peft_config, train_dataset, val_dataset):
         per_device_eval_batch_size=config.BATCH_SIZE,
         gradient_accumulation_steps=config.GRADIENT_ACCUMULATION_STEPS,
 
-        optim="paged_adamw_32bit",
-
-        fp16=use_fp16,
-        bf16=use_bf16,
-
         learning_rate=config.LEARNING_RATE,
-        weight_decay=0.001,
-        max_grad_norm=0.3,
-        warmup_ratio=0.03,
-        lr_scheduler_type="cosine",
+        weight_decay=0.01,
+        warmup_ratio=0.06,
+        lr_scheduler_type="linear",
 
-        logging_steps=25,
-        save_steps=EVAL_SAVE_STEPS,
-        eval_steps=EVAL_SAVE_STEPS,
         eval_strategy="steps",
-        save_total_limit=3,           # keep best + 2 recent checkpoints
+        eval_steps=STEPS_PER_EPOCH,
+        save_strategy="steps",
+        save_steps=STEPS_PER_EPOCH,
+        save_total_limit=2,
         load_best_model_at_end=True,
-        metric_for_best_model="eval_loss",
+        metric_for_best_model="macro_f1",
+        greater_is_better=True,
 
-        # group_by_length removed — conflicts with DataCollatorForSeq2Seq.
-        # The collator handles per-batch padding correctly already.
+        logging_steps=50,
+        dataloader_num_workers=0,
+        dataloader_pin_memory=False,
+
+        fp16=False,
+        bf16=torch.cuda.is_available() and torch.cuda.is_bf16_supported(),
     )
 
-    def tokenize_function(examples):
-        """
-        Tokenizes a batch of examples and masks prompt tokens in labels so the
-        loss is only computed on the label (Entailment/Neutral/Contradiction) tokens.
-        """
-        split_token = "### Label:"
-        all_input_ids = []
-        all_attention_masks = []
-        all_labels = []
-
-        for text in examples["text"]:
-            if split_token in text:
-                prompt, label_text = text.split(split_token, 1)
-                label_text = split_token + label_text
-            else:
-                prompt, label_text = text, ""
-
-            prompt_ids = tokenizer(
-                prompt,
-                truncation=True,
-                max_length=config.MAX_SEQ_LENGTH,
-                add_special_tokens=True,
-            )["input_ids"]
-
-            full = tokenizer(
-                prompt + label_text,
-                truncation=True,
-                max_length=config.MAX_SEQ_LENGTH,
-                add_special_tokens=True,
-            )
-
-            input_ids = full["input_ids"]
-            attention_mask = full["attention_mask"]
-
-            # Mask prompt token positions — loss is computed only on label tokens.
-            n_prompt = min(len(prompt_ids), len(input_ids))
-            labels = [-100] * n_prompt + input_ids[n_prompt:]
-
-            all_input_ids.append(input_ids)
-            all_attention_masks.append(attention_mask)
-            all_labels.append(labels)
-
-        return {
-            "input_ids": all_input_ids,
-            "attention_mask": all_attention_masks,
-            "labels": all_labels,
-        }
-
-    tokenized_train = train_dataset.map(
-        tokenize_function, batched=True, remove_columns=train_dataset.column_names
-    )
-    tokenized_val = val_dataset.map(
-        tokenize_function, batched=True, remove_columns=val_dataset.column_names
-    )
-
-    # Handles variable-length padding per batch and fills label padding with -100.
-    data_collator = DataCollatorForSeq2Seq(
-        tokenizer=tokenizer,
-        model=model,
-        padding=True,
-        label_pad_token_id=-100,
-    )
+    data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=tokenized_train,
         eval_dataset=tokenized_val,
-        processing_class=tokenizer,   # replaces deprecated tokenizer= kwarg
+        processing_class=tokenizer,
         data_collator=data_collator,
+        compute_metrics=compute_metrics,
     )
 
     trainer.train()
     print("--- Fine-Tuning Complete ---")
 
-    adapter_path = os.path.join(config.OUTPUT_DIR, "final_adapter")
-    trainer.model.save_pretrained(adapter_path)
-    print(f"LoRA adapter saved to {adapter_path}")
-    
+    model_path = os.path.join(config.OUTPUT_DIR, "final_model")
+    trainer.save_model(model_path)
+    tokenizer.save_pretrained(model_path)
+    print(f"Model saved to {model_path}")
