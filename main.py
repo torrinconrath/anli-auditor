@@ -7,6 +7,7 @@ from src import config
 from src.data_handler import prepare_anli_dataset
 from src.model_handler import load_model_and_tokenizer
 from src.trainer import fine_tune_model
+from src.evaluate import run_evaluation
 from src.auditor import RationaleAuditor
 
 def main():
@@ -24,7 +25,10 @@ def main():
     else:
         print(f"Skipping training. Ensure an adapter exists at {config.OUTPUT_DIR}/final_adapter")
 
-    # 4. Initialize the auditor and run the audit
+    # 4. Evaluate on the held-out R3 test set
+    eval_results = run_evaluation(model, tokenizer, test_data)
+
+    # 5. Initialize the auditor and run the audit
     print(f"\n--- Starting Audit on {config.NUM_AUDIT_SAMPLES} Test Samples ---")
     auditor = RationaleAuditor(model, tokenizer)
     

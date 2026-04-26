@@ -60,13 +60,17 @@ def prepare_anli_dataset(max_train_samples=config.MAX_TRAIN_SAMPLES, max_val_sam
 {label_map[sample['label']]}"""
         }
 
-    # Keep only the formatted text column — raw ANLI columns (uid, genre, etc.)
-    # are not needed downstream and add noise to the tokenizer batch.
-    cols_to_remove = [c for c in train_r1.column_names if c != "text"]
+    # Train/val: strip everything except text — raw ANLI columns are not needed.
+    # Test: keep label, premise, hypothesis — the evaluator and auditor need them.
+    train_val_cols_to_remove = [c for c in train_r1.column_names if c != "text"]
+    test_cols_to_remove = [
+        c for c in train_r1.column_names
+        if c not in ("text", "label", "premise", "hypothesis")
+    ]
 
-    train_dataset = full_train.map(format_prompt, remove_columns=cols_to_remove)
-    val_dataset   = full_val.map(format_prompt, remove_columns=cols_to_remove)
-    test_dataset  = test_dataset.map(format_prompt, remove_columns=cols_to_remove)
+    train_dataset = full_train.map(format_prompt, remove_columns=train_val_cols_to_remove)
+    val_dataset   = full_val.map(format_prompt, remove_columns=train_val_cols_to_remove)
+    test_dataset  = test_dataset.map(format_prompt, remove_columns=test_cols_to_remove)
 
     print(f"Train size:      {len(train_dataset)}")
     print(f"Validation size: {len(val_dataset)}")

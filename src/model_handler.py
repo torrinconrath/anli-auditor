@@ -42,7 +42,7 @@ def load_model_and_tokenizer():
         target_modules=config.LORA_TARGET_MODULES,
     )
 
-    model = prepare_model_for_kbit_training(model)
+    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
     model = get_peft_model(model, peft_config)
 
     return model, tokenizer, peft_config
