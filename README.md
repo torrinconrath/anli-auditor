@@ -9,7 +9,7 @@ This project investigates the gap between **faithfulness** and **plausibility** 
 ## Project Structure
 
 ```
-anili-auditor/
+anli-auditor/
 ├── main.py                  # Entry point — runs training, evaluation, and audit
 ├── requirements.txt
 └── src/
