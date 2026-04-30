@@ -3,6 +3,7 @@
 import json
 import numpy as np
 import torch
+import scipy.stats
 from tqdm import tqdm
 from sklearn.metrics import (
     classification_report,
@@ -57,7 +58,7 @@ def run_inference(model, tokenizer, sample: dict) -> tuple:
 
 
 def run_evaluation(model, tokenizer, test_dataset) -> dict:
-    print("\n--- Running Evaluation on ANLI R3 Test Set ---")
+    print("\n--- Running Evaluation on ANLI Test Set ---")
 
     model.eval()
 
@@ -65,8 +66,7 @@ def run_evaluation(model, tokenizer, test_dataset) -> dict:
         test_dataset = test_dataset.select(range(EVAL_SAMPLE_LIMIT))
         print(f"Running on {EVAL_SAMPLE_LIMIT} samples (set EVAL_SAMPLE_LIMIT=None for full set)")
 
-    y_true, y_pred = [], []
-    confidences, correct_flags = [], []
+    y_true, y_pred, confidences, correct_flags = [], [], [], []
 
     for sample in tqdm(test_dataset, desc="Evaluating"):
         predicted_id, confidence = run_inference(model, tokenizer, sample)
@@ -119,3 +119,31 @@ def run_evaluation(model, tokenizer, test_dataset) -> dict:
     print(f"\nResults saved to {out_path}")
 
     return results
+
+
+def compute_universal_metrics(correct_flags, las_scores, mismatched_las_scores, udr_threshold=0.30):
+    """
+    Computes the universal metrics proposed in the report.
+    - UDR: Unfaithfulness Detection Rate (Percentage of samples flagged as unfaithful based on low LAS).
+    - AFC: Accuracy-Faithfulness Correlation (Pearson correlation between correctness and LAS).
+    - SS: Synthetic Sensitivity (How often a corrupted/mismatched rationale is successfully flagged).
+    """
+    # 1. Unfaithfulness Detection Rate (UDR)
+    unfaithful_count = sum(1 for las in las_scores if las < udr_threshold)
+    udr = unfaithful_count / len(las_scores) if las_scores else 0.0
+
+    # 2. Accuracy-Faithfulness Correlation (AFC)
+    # Convert booleans to 1s and 0s
+    correct_array = np.array(correct_flags, dtype=int)
+    las_array = np.array(las_scores)
+    # Only calculate correlation if there is variance in the arrays
+    if len(np.unique(correct_array)) > 1 and len(np.unique(las_array)) > 1:
+        afc, p_value = scipy.stats.pearsonr(correct_array, las_array)
+    else:
+        afc = 0.0
+
+    # 3. Synthetic Sensitivity (SS)
+    ss_count = sum(1 for mism_las in mismatched_las_scores if mism_las < udr_threshold)
+    ss = ss_count / len(mismatched_las_scores) if mismatched_las_scores else 0.0
+
+    return udr, afc, ss

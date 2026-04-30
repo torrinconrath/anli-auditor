@@ -12,6 +12,7 @@ numpy<2
 # Utils
 scikit-learn
 tqdm
+scipy
 
 # Adversarial perturbation for CSI
 textattack

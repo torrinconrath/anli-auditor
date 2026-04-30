@@ -12,9 +12,9 @@ def prepare_anli_dataset(
     Loads and formats the ANLI dataset for RoBERTa sequence classification.
 
     Split strategy:
-      Train  — R1+R2+R3 training splits (subsampled across all difficulty rounds).
-      Val    — R1+R2 dev splits (easier) for loss-based epoch selection.
-      Test   — R3 dev split (hardest) held-out for final evaluation and audit.
+      Train  — R1+R2+R3 training splits
+      Val    — R1+R2+R3 dev splits (for loss-based epoch selection)
+      Test   — R1+R2+R3 test splits (for final evaluation and audit)
     """
     print("--- Loading and Preparing ANLI Dataset ---")
 
@@ -28,12 +28,16 @@ def prepare_anli_dataset(
 
     val_r1 = load_dataset("anli", split="dev_r1")
     val_r2 = load_dataset("anli", split="dev_r2")
-    full_val = concatenate_datasets([val_r1, val_r2])
+    val_r3 = load_dataset("anli", split="dev_r3")
+    full_val = concatenate_datasets([val_r1, val_r2, val_r3])
 
     if max_val_samples and max_val_samples < len(full_val):
         full_val = full_val.shuffle(seed=42).select(range(max_val_samples))
 
-    test_dataset = load_dataset("anli", split="dev_r3")
+    test_r1 = load_dataset("anli", split="test_r1")
+    test_r2 = load_dataset("anli", split="test_r2")
+    test_r3 = load_dataset("anli", split="test_r3")
+    test_dataset = concatenate_datasets([test_r1, test_r2, test_r3])
 
     label_map = config.ID2LABEL
 

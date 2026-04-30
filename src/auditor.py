@@ -19,7 +19,7 @@ class RationaleAuditor:
         self.augmenter = Augmenter(
             transformation=transformation,
             constraints=constraints,
-            pct_words_to_swap=0.1,
+            pct_words_to_swap=0.25, # 25% CSI shifts
             transformations_per_example=1,
         )
 
@@ -53,20 +53,20 @@ class RationaleAuditor:
         cls_state = outputs.hidden_states[-1][0, 0, :]
         return cls_state.cpu().numpy().reshape(1, -1)
 
-    def run_single_audit(self, sample: dict) -> tuple:
+    def run_single_audit(self, sample: dict, mismatched_rationale: str) -> tuple:
         premise = sample["premise"]
         hypothesis = sample["hypothesis"]
         human_rationale = sample["reason"]
 
-        # --- Latent Alignment Score (LAS) ---
+        # 1. Latent Alignment Score (LAS)
         # [CLS] state of the premise+hypothesis pair encodes the model's
         # decision representation. Compare to [CLS] of the human rationale
         # to measure semantic alignment between internal state and human reasoning.
         decision_state   = self.get_cls_hidden_state(premise, hypothesis)
-        rationale_state  = self.get_cls_hidden_state(human_rationale)
+        rationale_state  = self.get_cls_hidden_state(human_rationale, hypothesis)
         las = cosine_similarity(decision_state, rationale_state)[0, 0]
 
-        # --- Causal Sensitivity Index (CSI) ---
+        # 2. Causal Sensitivity Index (CSI)
         # Perturb the premise adversarially and measure how much the alignment
         # with the human rationale drops. High CSI = model is sensitive to
         # evidence changes, consistent with faithful reasoning.
@@ -75,4 +75,8 @@ class RationaleAuditor:
         perturbed_alignment = cosine_similarity(perturbed_state, rationale_state)[0, 0]
         csi = float(las - perturbed_alignment)
 
-        return float(las), float(csi)
+        # 3. Mismatched LAS (Used for calculating Synthetic Sensitivity later)
+        mismatched_state = self.get_cls_hidden_state(mismatched_rationale, hypothesis)
+        mismatched_las = cosine_similarity(decision_state, mismatched_state)[0, 0]
+
+        return float(las), float(csi), float(mismatched_las)

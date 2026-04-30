@@ -9,15 +9,15 @@ LOGGING_DIR = "./logs"
 NUM_AUDIT_SAMPLES = 100
 
 # --- Training Flags ---
-DO_FINETUNING = True
+DO_FINETUNING = False
 
 # --- Fine-Tuning Hyperparameters ---
-MAX_TRAIN_SAMPLES = 10000
-MAX_VAL_SAMPLES = 1000
-TRAIN_EPOCHS = 5                    # encoder models converge slower than causal LMs
+MAX_TRAIN_SAMPLES = 50000
+MAX_VAL_SAMPLES = None
+TRAIN_EPOCHS = 2                    # encoder models converge slower than causal LMs
 BATCH_SIZE = 16                     # RoBERTa is small — large batches are fine
 GRADIENT_ACCUMULATION_STEPS = 1
-LEARNING_RATE = 2e-5                # standard for RoBERTa fine-tuning on NLI
+LEARNING_RATE = 5e-6                # standard for RoBERTa fine-tuning on NLI
 MAX_SEQ_LENGTH = 512
 
 # --- Labels ---

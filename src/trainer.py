@@ -11,8 +11,9 @@ from . import config
 def fine_tune_model(model, tokenizer, train_dataset, val_dataset):
     """
     Fine-tunes RoBERTa-large for NLI classification.
-    Standard full fine-tuning — no LoRA, no quantization.
-    Expected runtime: ~20-30 minutes on RTX 4070.
+    50k samples, 3 epochs, lower LR — tuned to prevent the overfitting
+    seen with 10k/5 epochs (val_loss 3.52, test F1 37%).
+    Expected runtime: ~35-45 minutes on RTX 4070.
     """
     print("\n--- Starting Fine-Tuning ---")
 
@@ -35,9 +36,8 @@ def fine_tune_model(model, tokenizer, train_dataset, val_dataset):
             "macro_f1": f1_score(labels, preds, average="macro"),
         }
 
-    # Steps per epoch: 10000 / 16 = 625
-    # Total steps: 625 * 5 = 3125
-    # Eval every 625 steps = once per epoch
+    # 50000 / 16 = 3125 steps/epoch × 3 epochs = 9375 total steps
+    # Eval once per epoch
     STEPS_PER_EPOCH = len(tokenized_train) // config.BATCH_SIZE
 
     training_args = TrainingArguments(
@@ -51,7 +51,7 @@ def fine_tune_model(model, tokenizer, train_dataset, val_dataset):
         gradient_accumulation_steps=config.GRADIENT_ACCUMULATION_STEPS,
 
         learning_rate=config.LEARNING_RATE,
-        weight_decay=0.01,
+        weight_decay=0.01,          # L2 regularization helps generalization
         warmup_ratio=0.06,
         lr_scheduler_type="linear",
 
@@ -64,7 +64,7 @@ def fine_tune_model(model, tokenizer, train_dataset, val_dataset):
         metric_for_best_model="macro_f1",
         greater_is_better=True,
 
-        logging_steps=50,
+        logging_steps=100,
         dataloader_num_workers=0,
         dataloader_pin_memory=False,
 
