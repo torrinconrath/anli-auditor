@@ -16,3 +16,4 @@ scipy
 
 # Adversarial perturbation for CSI
 textattack
+nltk
