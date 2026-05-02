@@ -1,11 +1,5 @@
 # ANLI Rationale Auditor
 
-![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python&logoColor=white)
-![PyTorch](https://img.shields.io/badge/PyTorch-2.2.2%2BCUDA12.1-red?logo=pytorch&logoColor=white)
-![HuggingFace](https://img.shields.io/badge/🤗-Transformers-yellow)
-![TextAttack](https://img.shields.io/badge/TextAttack-TextFooler-orange)
-![License](https://img.shields.io/badge/License-MIT-green)
-
 A suite of NLP interpretability techniques for evaluating whether a fine-tuned **RoBERTa-large** model's internal reasoning aligns with human-grounded rationales on the [Adversarial Natural Language Inference (ANLI)](https://github.com/facebookresearch/anli) dataset.
 
 This project investigates the gap between **faithfulness** and **plausibility** in transformer models — specifically, whether the rationales a model implicitly relies on actually reflect its internal decision-making process, or are merely post-hoc justifications.
