@@ -165,13 +165,12 @@ All key settings live in `src/config.py`. The table below reflects the current d
 | `DO_FINETUNING` | `False` | Set to `True` to run training; `False` loads from `OUTPUT_DIR/final_model` |
 | `MAX_TRAIN_SAMPLES` | `50000` | Training samples drawn from R1+R2+R3 train splits |
 | `MAX_VAL_SAMPLES` | `None` | Validation samples (`None` = full dev set) |
-| `NUM_AUDIT_SAMPLES` | `500` | Auditing samples drawed from a subset of the test splits|
+| `NUM_AUDIT_SAMPLES` | `500` | Number of test samples used for the rationale audit |
 | `TRAIN_EPOCHS` | `2` | Number of training epochs |
 | `BATCH_SIZE` | `16` | Per-device batch size |
 | `LEARNING_RATE` | `5e-6` | Conservative LR suited to fine-tuning on noisy adversarial labels |
 | `GRADIENT_ACCUMULATION_STEPS` | `1` | Effective batch size multiplier |
 | `MAX_SEQ_LENGTH` | `512` | Max token length for premise + hypothesis |
-| `NUM_AUDIT_SAMPLES` | `500` | Number of test samples used for the rationale audit |
 
 ---
 
