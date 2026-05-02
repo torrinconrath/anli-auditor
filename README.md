@@ -140,14 +140,6 @@ python main.py
 
 This loads the saved model from `./results_anli_roberta/final_model` and runs evaluation and audit only.
 
-### Quick Subset Evaluation
-
-In `src/evaluate.py`, set:
-
-```python
-EVAL_SAMPLE_LIMIT = 100  # evaluate on first 100 samples only
-```
-
 ### Generate Figures
 
 After a completed audit run:
@@ -173,6 +165,7 @@ All key settings live in `src/config.py`. The table below reflects the current d
 | `DO_FINETUNING` | `False` | Set to `True` to run training; `False` loads from `OUTPUT_DIR/final_model` |
 | `MAX_TRAIN_SAMPLES` | `50000` | Training samples drawn from R1+R2+R3 train splits |
 | `MAX_VAL_SAMPLES` | `None` | Validation samples (`None` = full dev set) |
+| `NUM_AUDIT_SAMPLES` | `500` | Auditing samples drawed from a subset of the test splits|
 | `TRAIN_EPOCHS` | `2` | Number of training epochs |
 | `BATCH_SIZE` | `16` | Per-device batch size |
 | `LEARNING_RATE` | `5e-6` | Conservative LR suited to fine-tuning on noisy adversarial labels |
