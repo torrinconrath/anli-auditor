@@ -3,7 +3,6 @@
 import json
 import numpy as np
 import torch
-import scipy.stats
 from tqdm import tqdm
 from sklearn.metrics import (
     classification_report,
@@ -17,7 +16,7 @@ LABEL_MAP = config.ID2LABEL
 LABEL_TO_ID = config.LABEL2ID
 ID_ORDER = [0, 1, 2]
 
-EVAL_SAMPLE_LIMIT = None  # set to int for quick runs, None for full 1200
+EVAL_SAMPLE_LIMIT = None  # set to int for quick runs, None for full set
 
 
 def expected_calibration_error(
@@ -82,7 +81,7 @@ def run_evaluation(model, tokenizer, test_dataset) -> dict:
     cm = confusion_matrix(y_true, y_pred, labels=ID_ORDER)
 
     print("\n" + "=" * 60)
-    print("EVALUATION RESULTS — ANLI R3 Dev Set")
+    print("EVALUATION RESULTS — ANLI Test Set")
     print("=" * 60)
     print(f"\nAccuracy  : {acc:.4f}  ({acc*100:.2f}%)")
     print(f"Macro F1  : {macro_f1:.4f}  ({macro_f1*100:.2f}%)")
@@ -121,29 +120,57 @@ def run_evaluation(model, tokenizer, test_dataset) -> dict:
     return results
 
 
-def compute_universal_metrics(correct_flags, las_scores, mismatched_las_scores, udr_threshold=0.30):
+def compute_universal_metrics(
+    las_scores: list,
+    mismatched_las_scores: list,
+    csi_scores_all: list,
+    csi_valid_flags: list,
+    udr_threshold: float = 0.30,
+) -> dict:
     """
-    Computes the universal metrics proposed in the report.
-    - UDR: Unfaithfulness Detection Rate (Percentage of samples flagged as unfaithful based on low LAS).
-    - AFC: Accuracy-Faithfulness Correlation (Pearson correlation between correctness and LAS).
-    - SS: Synthetic Sensitivity (How often a corrupted/mismatched rationale is successfully flagged).
-    """
-    # 1. Unfaithfulness Detection Rate (UDR)
-    unfaithful_count = sum(1 for las in las_scores if las < udr_threshold)
-    udr = unfaithful_count / len(las_scores) if las_scores else 0.0
+    Computes all universal and approach-specific metrics.
 
-    # 2. Accuracy-Faithfulness Correlation (AFC)
-    # Convert booleans to 1s and 0s
-    correct_array = np.array(correct_flags, dtype=int)
-    las_array = np.array(las_scores)
-    # Only calculate correlation if there is variance in the arrays
-    if len(np.unique(correct_array)) > 1 and len(np.unique(las_array)) > 1:
-        afc, p_value = scipy.stats.pearsonr(correct_array, las_array)
+    UDR threshold is set to 0.30. Cosine similarity below 0.30 means the
+    decision vector and rationale vector share less than 30% directional
+    overlap — a principled geometric definition of misalignment that does
+    not depend on the shape of the LAS distribution.
+
+    0.50 or higher is too permissive: cosine similarity of 0.50 still
+    indicates meaningful overlap between the two vectors, so flagging those
+    samples as unfaithful would conflate moderate alignment with no alignment.
+    0.80 or higher would flag the majority of samples including many that are
+    genuinely well-aligned, making UDR uninterpretable as a faithfulness signal.
+
+    CSI aggregation is restricted to samples where csi_valid=True (TextFooler
+    found a label-flipping perturbation). Including failed attacks would
+    suppress the mean toward zero artifactually.
+    """
+    las_array  = np.array(las_scores)
+    mism_array = np.array(mismatched_las_scores)
+
+    udr = round(float((las_array < udr_threshold).mean()), 4)
+    ss  = round(float((mism_array < udr_threshold).mean()), 4)
+
+    # CSI distribution (valid attacks only)
+    valid_csi   = [s for s, v in zip(csi_scores_all, csi_valid_flags) if v]
+    csi_skipped = int(sum(1 for v in csi_valid_flags if not v))
+
+    if valid_csi:
+        arr = np.array(valid_csi)
+        csi_dist = {
+            "mean":         round(float(arr.mean()), 4),
+            "std":          round(float(arr.std()),  4),
+            "median":       round(float(np.median(arr)), 4),
+            "min":          round(float(arr.min()),  4),
+            "max":          round(float(arr.max()),  4),
+            "pct_negative": round(float((arr < 0).mean()), 4),
+        }
     else:
-        afc = 0.0
+        csi_dist = {}
 
-    # 3. Synthetic Sensitivity (SS)
-    ss_count = sum(1 for mism_las in mismatched_las_scores if mism_las < udr_threshold)
-    ss = ss_count / len(mismatched_las_scores) if mismatched_las_scores else 0.0
-
-    return udr, afc, ss
+    return {
+        "udr": udr,
+        "ss": ss,
+        "csi_distribution": csi_dist,
+        "csi_skipped_count": csi_skipped,
+    }

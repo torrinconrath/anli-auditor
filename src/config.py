@@ -6,7 +6,7 @@ OUTPUT_DIR = "./results_anli_roberta"
 LOGGING_DIR = "./logs"
 
 # --- Auditing ---
-NUM_AUDIT_SAMPLES = 100
+NUM_AUDIT_SAMPLES = 500
 
 # --- Training Flags ---
 DO_FINETUNING = False
