@@ -11,6 +11,12 @@ env/
 .env
 
 # Output files
-results*/
 logs/
 *.log
+
+# Ignore bulky model artifacts inside results*/ but keep audit_results.json,
+# eval_results.json, and figures/ — negation rules cannot un-ignore files
+# inside a fully-ignored directory, so we ignore specific subdirs instead.
+results*/checkpoint-*/
+results*/final_model/
+results*/runs/
