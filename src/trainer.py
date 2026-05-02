@@ -36,7 +36,7 @@ def fine_tune_model(model, tokenizer, train_dataset, val_dataset):
             "macro_f1": f1_score(labels, preds, average="macro"),
         }
 
-    # 50000 / 16 = 3125 steps/epoch × 3 epochs = 9375 total steps
+    # 50000 / 16 = 3125 steps/epoch
     # Eval once per epoch
     STEPS_PER_EPOCH = len(tokenized_train) // config.BATCH_SIZE
 
